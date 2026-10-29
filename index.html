@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>カタカナならべかえパズル</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Canvas Confetti for celebrating correct answers -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Google Fonts for friendly Japanese rounded typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kiwi+Maru:wght@500;700&family=M+PLUS+Rounded+1c:wght@700;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+        .font-kiwi {
+            font-family: 'Kiwi Maru', serif;
+        }
+        /* Custom animations */
+        @keyframes bounce-gentle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        .animate-bounce-gentle {
+            animation: bounce-gentle 2s infinite ease-in-out;
+        }
+        @keyframes pulse-shake {
+            0%, 100% { transform: translateX(0) scale(1); }
+            20%, 60% { transform: translateX(-5px) scale(0.98); }
+            40%, 80% { transform: translateX(5px) scale(0.98); }
+        }
+        .animate-shake {
+            animation: pulse-shake 0.4s ease-in-out;
+        }
+        .tile-shadow {
+            box-shadow: 0 6px 0 0 rgba(0, 0, 0, 0.15);
+        }
+        .tile-shadow:active {
+            box-shadow: 0 2px 0 0 rgba(0, 0, 0, 0.15);
+            transform: translateY(4px);
+        }
+        .slot-shadow {
+            box-shadow: inset 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-amber-50 min-h-screen text-slate-800 flex flex-col justify-between overflow-x-hidden">
+
+    <!-- Top Header / Bar -->
+    <header class="w-full bg-amber-400 p-3 sm:p-4 shadow-md flex justify-between items-center max-w-3xl mx-auto rounded-b-2xl">
+        <div class="flex items-center gap-2">
+            <span class="text-3xl">🐼</span>
+            <h1 class="text-xl sm:text-2xl font-black text-amber-950 tracking-wider">カタカナ パズル</h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <!-- Score / Stars -->
+            <div class="bg-amber-100 border-2 border-amber-500 rounded-full px-3 py-1 flex items-center gap-1 shadow-inner">
+                <span class="text-2xl">⭐</span>
+                <span id="star-count" class="text-xl font-bold text-amber-800">0</span>
+            </div>
+            <!-- Category Switcher Button -->
+            <button id="category-btn" onclick="openCategoryModal()" class="bg-white hover:bg-amber-50 text-amber-900 border-2 border-amber-300 font-bold px-3 py-1.5 rounded-xl text-sm shadow transition active:scale-95">
+                📁 カテゴリ
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Container -->
+    <main class="flex-1 max-w-2xl w-full mx-auto p-4 flex flex-col justify-center items-center gap-6">
+
+        <!-- Hiragana Word Display Box -->
+        <div class="bg-white border-4 border-amber-300 rounded-3xl p-6 shadow-xl w-full text-center relative overflow-hidden flex flex-col items-center">
+            <div id="category-badge" class="absolute top-3 left-4 bg-amber-100 text-amber-800 text-xs sm:text-sm font-bold px-3 py-1 rounded-full">
+                どうぶつ
+            </div>
+            <div class="text-gray-400 text-xs sm:text-sm mt-4 mb-1 font-bold">ひらがな を カタカナ に ななおそう！</div>
+            <div class="flex items-center justify-center gap-3 my-2 flex-wrap">
+                <span id="word-emoji" class="text-5xl sm:text-6xl animate-bounce-gentle">🐼</span>
+                <div id="hiragana-display" class="text-4xl sm:text-6xl font-black tracking-widest text-emerald-600 font-kiwi py-1">
+                    ぱんだ
+                </div>
+                <!-- 読み上げボタン（音声読み上げ） -->
+                <button onclick="speakWord()" class="bg-emerald-100 hover:bg-emerald-200 active:bg-emerald-300 text-emerald-800 border-2 border-emerald-400 font-bold px-3 py-2 rounded-2xl text-base sm:text-lg shadow transition transform active:scale-95 flex items-center gap-1">
+                    🔊 きく
+                </button>
+            </div>
+        </div>
+
+        <!-- Target Drop Slots (The target area for katakana) -->
+        <div class="w-full flex flex-col items-center gap-2">
+            <div class="text-xs sm:text-sm font-bold text-amber-800">ここに カード を ならべてね</div>
+            <div id="slots-container" class="flex flex-wrap justify-center gap-2 sm:gap-3 p-3 bg-amber-200/60 rounded-2xl w-full min-h-[90px] items-center">
+                <!-- Drop Slots dynamically generated here -->
+            </div>
+        </div>
+
+        <!-- Tile Source Area (Scrambled Katakana) -->
+        <div class="w-full flex flex-col items-center gap-2">
+            <div id="instruction-label" class="text-xs sm:text-sm font-bold text-amber-800">カード を タップ して うごかそう</div>
+            <div id="source-container" class="flex flex-wrap justify-center gap-2 sm:gap-3 p-4 bg-white/80 border-2 border-dashed border-amber-300 rounded-2xl w-full min-h-[95px] items-center">
+                <!-- Katakana Tiles dynamically generated here -->
+            </div>
+        </div>
+
+        <!-- Control Buttons & Feedback Message -->
+        <div class="w-full flex flex-col items-center gap-3">
+            <div id="message-box" class="h-8 text-center text-lg sm:text-xl font-bold transition-all duration-300"></div>
+
+            <div class="flex gap-4">
+                <button id="reset-btn" onclick="resetCurrentWord()" class="bg-gray-200 hover:bg-gray-300 active:bg-gray-400 text-gray-700 font-bold px-4 py-2.5 rounded-2xl shadow transition flex items-center gap-1">
+                    🔄 やりなおす
+                </button>
+                <button id="check-btn" onclick="checkAnswer()" class="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-extrabold px-8 py-2.5 rounded-2xl text-lg shadow-lg transition transform active:scale-95 flex items-center gap-1">
+                    ✨ こたえあわせ
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center py-3 text-amber-700/70 text-xs font-bold">
+        たのしく まなおう！カタカナ パズル
+    </footer>
+
+    <!-- Category Selection Modal -->
+    <div id="category-modal" class="fixed inset-0 bg-black/40 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white border-4 border-amber-400 rounded-3xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4">
+            <h2 class="text-xl font-black text-center text-amber-900 border-b-2 border-amber-100 pb-2">
+                なにを れんしゅう する？
+            </h2>
+            <div class="grid grid-cols-1 gap-2.5">
+                <button onclick="selectCategory('all')" class="category-option p-3 bg-amber-50 hover:bg-amber-100 border-2 border-amber-200 rounded-2xl font-bold text-left flex items-center justify-between text-amber-900">
+                    <span>🌟 ぜんぶ (ミックス)</span>
+                    <span class="text-xs bg-amber-200 px-2 py-0.5 rounded-full">おすすめ</span>
+                </button>
+                <button onclick="selectCategory('animals')" class="category-option p-3 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-200 rounded-2xl font-bold text-left text-emerald-900">
+                    🐼 どうぶつ (パンダ、ライオン など)
+                </button>
+                <button onclick="selectCategory('food')" class="category-option p-3 bg-orange-50 hover:bg-orange-100 border-2 border-orange-200 rounded-2xl font-bold text-left text-orange-900">
+                    🍌 たべもの (バナナ、ケーキ など)
+                </button>
+                <button onclick="selectCategory('vehicles')" class="category-option p-3 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 rounded-2xl font-bold text-left text-blue-900">
+                    バス のりもの (バス、タクシー など)
+                </button>
+            </div>
+            <button onclick="closeCategoryModal()" class="mt-2 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2 rounded-xl text-center">
+                とじる
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript Game Logic -->
+    <script>
+        // Word Database
+        const wordData = [
+            // 動物
+            { category: 'animals', hiragana: 'ぱんだ', katakana: ['パ', 'ン', 'ダ'], emoji: '🐼' },
+            { category: 'animals', hiragana: 'らいおん', katakana: ['ラ', 'イ', 'オ', 'ン'], emoji: '🦁' },
+            { category: 'animals', hiragana: 'ごりら', katakana: ['ゴ', 'リ', 'ラ'], emoji: '🦍' },
+            { category: 'animals', hiragana: 'きりん', katakana: ['キ', 'リ', 'ン'], emoji: '🦒' },
+            { category: 'animals', hiragana: 'ぺんぎん', katakana: ['ペ', 'ン', 'ギ', 'ン'], emoji: '🐧' },
+            { category: 'animals', hiragana: 'こうもり', katakana: ['コ', 'ウ', 'モ', 'リ'], emoji: '🦇' },
+            { category: 'animals', hiragana: 'カンガルー', katakana: ['カ', 'ン', 'ガ', 'ル', 'ー'], emoji: '🦘' },
+            { category: 'animals', hiragana: 'しまうま', katakana: ['シ', 'マ', 'ウ', 'マ'], emoji: '🦓' },
+            
+            // 食べ物
+            { category: 'food', hiragana: 'ばなな', katakana: ['バ', 'ナ', 'ナ'], emoji: '🍌' },
+            { category: 'food', hiragana: 'けーき', katakana: ['ケ', 'ー', 'キ'], emoji: '🍰' },
+            { category: 'food', hiragana: 'りんご', katakana: ['リ', 'ン', 'ゴ'], emoji: '🍎' },
+            { category: 'food', hiragana: 'とまと', katakana: ['ト', 'マ', 'ト'], emoji: '🍅' },
+            { category: 'food', hiragana: 'いちご', katakana: ['イ', 'チ', 'ゴ'], emoji: '🍓' },
+            { category: 'food', hiragana: 'じゅーす', katakana: ['ジ', 'ュ', 'ー', 'ス'], emoji: '🧃' },
+            { category: 'food', hiragana: 'ぴざ', katakana: ['ピ', 'ザ'], emoji: '🍕' },
+            { category: 'food', hiragana: 'ぱん', katakana: ['パ', 'ン'], emoji: '🍞' },
+
+            // 乗り物
+            { category: 'vehicles', hiragana: 'ばす', katakana: ['バ', 'ス'], emoji: '🚌' },
+            { category: 'vehicles', hiragana: 'たくしー', katakana: ['タ', 'ク', 'シ', 'ー'], emoji: '🚕' },
+            { category: 'vehicles', hiragana: 'とらっく', katakana: ['ト', 'ラ', 'ッ', 'ク'], emoji: '🚚' },
+            { category: 'vehicles', hiragana: 'へりこぷたー', katakana: ['ヘ', 'リ', 'コ', 'プ', 'タ', 'ー'], emoji: '🚁' },
+            { category: 'vehicles', hiragana: 'ろけっと', katakana: ['ロ', 'ケ', 'ッ', 'ト'], emoji: '🚀' },
+            { category: 'vehicles', hiragana: 'よっと', katakana: ['ヨ', 'ッ', 'ト'], emoji: '⛵' }
+        ];
+
+        // State variables
+        let currentCategory = 'all';
+        let filteredWords = [...wordData];
+        let currentWordIndex = 0;
+        let currentWord = null;
+        let selectedSlots = []; // Stores tile ids placed in slots
+        let remainingTiles = []; // Stores tile objects still in source area
+        let starCount = 0;
+        let audioCtx = null;
+
+        // 音声読み上げ機能 (Speech Synthesis)
+        function speakWord() {
+            if (!currentWord || !('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel(); // 前の音声をクリア
+            const utterance = new SpeechSynthesisUtterance(currentWord.hiragana);
+            utterance.lang = 'ja-JP';
+            utterance.rate = 0.6; // お子様向けにさらにゆっくり読み上げる設定に変更
+            utterance.pitch = 1.1; // 少し高めの聞きやすいトーン
+            window.speechSynthesis.speak(utterance);
+        }
+
+        // Web Audio Sound Effects System
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        function playSound(type) {
+            initAudio();
+            if (!audioCtx) return;
+
+            const now = audioCtx.currentTime;
+
+            if (type === 'tap') {
+                // Short pop sound
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(800, now + 0.08);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.08);
+            } else if (type === 'correct') {
+                // Happy fan-fare chime (C5 -> E5 -> G5 -> C6)
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, index) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + index * 0.1);
+                    gain.gain.setValueAtTime(0.3, now + index * 0.1);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.1 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + index * 0.1);
+                    osc.stop(now + index * 0.1 + 0.3);
+                });
+            } else if (type === 'wrong') {
+                // Buzz sound
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.setValueAtTime(140, now + 0.15);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            }
+        }
+
+        // Initialize Game
+        window.onload = function() {
+            // 保存されたスターの数を読み込み
+            const savedStars = localStorage.getItem('katakana_game_stars');
+            if (savedStars !== null) {
+                starCount = parseInt(savedStars, 10) || 0;
+                document.getElementById('star-count').textContent = starCount;
+            }
+
+            shuffleArray(filteredWords);
+            loadWord();
+        };
+
+        // Shuffle utility
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        // Category Selection
+        function openCategoryModal() {
+            document.getElementById('category-modal').classList.remove('hidden');
+        }
+
+        function closeCategoryModal() {
+            document.getElementById('category-modal').classList.add('hidden');
+        }
+
+        function selectCategory(category) {
+            currentCategory = category;
+            closeCategoryModal();
+
+            if (category === 'all') {
+                filteredWords = [...wordData];
+            } else {
+                filteredWords = wordData.filter(w => w.category === category);
+            }
+
+            shuffleArray(filteredWords);
+            currentWordIndex = 0;
+            loadWord();
+        }
+
+        // Load current problem
+        function loadWord() {
+            if (filteredWords.length === 0) return;
+
+            currentWord = filteredWords[currentWordIndex];
+
+            // Set UI texts
+            document.getElementById('hiragana-display').textContent = currentWord.hiragana;
+            document.getElementById('word-emoji').textContent = currentWord.emoji;
+            document.getElementById('message-box').textContent = '';
+            
+            // Category Badge text
+            const catNames = {
+                animals: '🐼 どうぶつ',
+                food: '🍌 たべもの',
+                vehicles: '🚌 のりもの'
+            };
+            document.getElementById('category-badge').textContent = catNames[currentWord.category] || '🌟 みっくす';
+
+            // Reset slots and tiles state
+            selectedSlots = new Array(currentWord.katakana.length).fill(null);
+
+            // Create tiles with unique IDs and scramble them
+            let tilesObj = currentWord.katakana.map((char, index) => ({
+                id: `tile-${index}-${Date.now()}`,
+                char: char
+            }));
+
+            // Make sure tiles are actually shuffled differently from answer if possible
+            let scrambled = shuffleArray([...tilesObj]);
+            if (scrambled.length > 1) {
+                // If by chance shuffled result equals correct answer, reshuffle
+                let same = scrambled.every((t, idx) => t.char === currentWord.katakana[idx]);
+                if (same) {
+                    scrambled.reverse();
+                }
+            }
+            remainingTiles = scrambled;
+
+            renderBoard();
+
+            // 問題表示時に単語を自動読み上げ
+            setTimeout(() => {
+                speakWord();
+            }, 300);
+        }
+
+        // Render Slots and Tiles
+        function renderBoard() {
+            const slotsContainer = document.getElementById('slots-container');
+            const sourceContainer = document.getElementById('source-container');
+
+            slotsContainer.innerHTML = '';
+            sourceContainer.innerHTML = '';
+
+            // Render Target Slots
+            selectedSlots.forEach((tile, index) => {
+                const slotEl = document.createElement('div');
+                slotEl.className = 'w-14 h-14 sm:w-16 sm:h-16 rounded-2xl border-3 border-amber-300 bg-white/70 slot-shadow flex items-center justify-center relative';
+                
+                if (tile) {
+                    // Tile is placed in slot
+                    const tileEl = createTileElement(tile, true);
+                    slotEl.appendChild(tileEl);
+                } else {
+                    // Empty slot placeholder number/dot
+                    const dot = document.createElement('span');
+                    dot.className = 'text-amber-300 text-xl font-bold select-none';
+                    dot.textContent = '□';
+                    slotEl.appendChild(dot);
+                }
+
+                // Click on empty slot action or handle drop
+                slotEl.onclick = () => {
+                    if (selectedSlots[index]) {
+                        // Return tile to source
+                        returnTileToSource(index);
+                    }
+                };
+
+                slotsContainer.appendChild(slotEl);
+            });
+
+            // Render Remaining Tiles in Source Box
+            remainingTiles.forEach(tile => {
+                const tileEl = createTileElement(tile, false);
+                sourceContainer.appendChild(tileEl);
+            });
+        }
+
+        // Helper to create tile HTML element
+        function createTileElement(tile, isInSlot) {
+            const btn = document.createElement('button');
+            btn.className = `w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-b from-amber-300 to-amber-400 border-b-4 border-amber-600 text-amber-950 font-black text-2xl sm:text-3xl flex items-center justify-center tile-shadow transition transform active:scale-90 cursor-pointer ${
+                isInSlot ? 'bg-gradient-to-b from-sky-200 to-sky-300 border-sky-500 text-sky-950' : ''
+            }`;
+            btn.textContent = tile.char;
+
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                playSound('tap');
+
+                if (isInSlot) {
+                    // If clicked inside slot, move back to source
+                    const slotIndex = selectedSlots.findIndex(t => t && t.id === tile.id);
+                    if (slotIndex !== -1) {
+                        returnTileToSource(slotIndex);
+                    }
+                } else {
+                    // If clicked inside source, move to first empty slot
+                    moveToNextSlot(tile);
+                }
+            };
+
+            return btn;
+        }
+
+        // Move tile to next available slot
+        function moveToNextSlot(tile) {
+            const emptyIndex = selectedSlots.findIndex(s => s === null);
+            if (emptyIndex !== -1) {
+                selectedSlots[emptyIndex] = tile;
+                remainingTiles = remainingTiles.filter(t => t.id !== tile.id);
+                renderBoard();
+            }
+        }
+
+        // Return tile from slot to source box
+        function returnTileToSource(slotIndex) {
+            const tile = selectedSlots[slotIndex];
+            if (tile) {
+                selectedSlots[slotIndex] = null;
+                remainingTiles.push(tile);
+                renderBoard();
+            }
+        }
+
+        // Reset current word layout
+        function resetCurrentWord() {
+            playSound('tap');
+            loadWord();
+        }
+
+        // Check Answer Logic
+        function checkAnswer() {
+            const messageBox = document.getElementById('message-box');
+
+            // Check if all slots are filled
+            if (selectedSlots.some(s => s === null)) {
+                messageBox.textContent = 'カタカナ を ぜんぶ ならべてね！';
+                messageBox.className = 'h-8 text-center text-lg sm:text-xl font-bold text-amber-700 animate-shake';
+                playSound('wrong');
+                return;
+            }
+
+            // Compare placed characters with target word
+            const userWord = selectedSlots.map(s => s.char).join('');
+            const targetWord = currentWord.katakana.join('');
+
+            if (userWord === targetWord) {
+                // Correct Answer!
+                playSound('correct');
+                messageBox.textContent = '🎉 すごい！ せいかい！ 🎉';
+                messageBox.className = 'h-8 text-center text-xl sm:text-2xl font-black text-emerald-600 animate-bounce';
+
+                // Confetti celebration
+                confetti({
+                    particleCount: 70,
+                    spread: 60,
+                    origin: { y: 0.7 }
+                });
+
+                // Update stars & save to localStorage
+                starCount++;
+                document.getElementById('star-count').textContent = starCount;
+                localStorage.setItem('katakana_game_stars', starCount);
+
+                // Move to next word after a short delay
+                setTimeout(() => {
+                    currentWordIndex = (currentWordIndex + 1) % filteredWords.length;
+                    // Reshuffle if looped through all words
+                    if (currentWordIndex === 0) {
+                        shuffleArray(filteredWords);
+                    }
+                    loadWord();
+                }, 1800);
+
+            } else {
+                // Wrong Answer
+                playSound('wrong');
+                messageBox.textContent = 'ざんねん！ もういちど かんがえてみよう！';
+                messageBox.className = 'h-8 text-center text-lg sm:text-xl font-bold text-rose-500 animate-shake';
+            }
+        }
+    </script>
+</body>
+</html>
